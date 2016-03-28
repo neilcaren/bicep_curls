@@ -1,0 +1,157 @@
+---
+title: "Investigating how well a unilateral dumbbell bicep curl was performed"
+author: "Neil Caren"
+date: "March 20, 2016"
+output: html_document
+---
+##Summary
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.   
+
+The goal of this reserach is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+
+
+##Environment Setup and data acquistion
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r warning=FALSE}
+library(caret)
+library(randomForest)
+setwd("~/Dropbox/scans/datascience/John Hopkins/Machine Learning")
+training <- read.csv("pml-training.csv", stringsAsFactors = FALSE)
+testing <- read.csv("pml-testing.csv", stringsAsFactors = FALSE)
+
+
+```
+
+##Exploratory Data Analysis
+The data has many variables with significant NA data poionts.  After impact analysis it was decided to remove these columns along with other non-numewric variable that woudl get in the way of modeling
+```{r cache=TRUE}
+
+training2 <- training
+
+for(x in ncol(training2):1) {
+  if(anyNA(training2[,x]))
+     training2[,x] <- NULL
+}
+
+training2ColNames <- colnames(training2)
+
+for(x in ncol(training2):1) {
+  #print(x)
+  strTest <- substr(training2ColNames[x], 1,4) 
+  if(strTest == "kurt" | strTest == "skew" | strTest == "min_" | strTest == "max_" | strTest == "ampl")
+     training2[,x] <- NULL
+}
+
+training2$X<-NULL
+training2$user_name<-NULL
+training2$cvtd_timestamp<-NULL
+training2$new_window<-NULL
+
+
+
+```
+
+##Pre- processing
+PCA analysis was performed and it was determind that while 2 PCA variables account for 99.9% of variance but there isn't a clear segregation of the data (see scatter Below) so I didn't continue with a PCA approach
+
+```{r}
+PCA <- prcomp(training2[,-56])
+summary(PCA)
+typeColor <- ifelse(training$classe == "A",1, ifelse(training$classe == "B", 2, ifelse(training$classe == "C", 3,ifelse(training$classe == "D",4,5))))
+
+```
+
+Scatter
+```{r echo=FALSE}
+plot(PCA$x[,1], PCA$x[,2], col=typeColor)
+```
+
+
+
+
+##Model Selection
+Prior to model selection I chose to center and scale the data.
+I first attempted a glm model but it failed to converge.
+Next I used a RF and was able to complete and predict 100% on the 
+training set I partioned as a cross reference check.  Code and results are detailed below
+
+Step 1 Fit RF
+```{r cache=TRUE}
+pproc <- preProcess(training2[,-56], method=c("center", "scale"))
+training3 <- predict(pproc, training2)
+modFit <- train(classe~., method="rf", data=training3)
+```
+
+Partion / subset training data with by creating a index at random to set aside for a cross reference approach 
+
+```{r}
+randomSampleIndex <- sample (1:nrow(training3))
+training4 <- training3[randomSampleIndex,]
+pred4 <- predict(modFit, training4)
+
+crossRefComp <- data.frame(pred4, training4$classe)
+numErrors <- ifelse(pred4 == training4$classe,0,1)
+
+```
+
+######Number of Errors after predicting the cross reference training data is equal to `r sum(numErrors)`
+
+##Model evaluation
+Looking at the confusion matrix shows that we have a very small error rat of just .06%
+
+```{r}
+modFit$finalModel
+```
+
+
+With a strong model we move pre-process and the test data to evaluate the model results
+
+## Prepare Test data and run a prediction
+```{r cache=TRUE}
+
+testing2 <- testing
+
+for(x in ncol(testing2):1) {
+  if(anyNA(testing2[,x]))
+     testing2[,x] <- NULL
+}
+
+testing2ColNames <- colnames(testing2)
+
+for(x in ncol(testing2):1) {
+  
+  strTest <- substr(testing2ColNames[x], 1,4) 
+  if(strTest == "kurt" | strTest == "skew" | strTest == "min_" | strTest == "max_" | strTest == "ampl")
+     testing2[,x] <- NULL
+}
+
+testing2$X<-NULL
+testing2$user_name<-NULL
+testing2$cvtd_timestamp<-NULL
+testing2$new_window<-NULL
+
+testing3 <- predict(pproc, testing2)
+predTest <- predict(modFit, testing3)
+
+```
+
+
+##Result / Conclusion
+The prediction came in at 100% accurate based on seperate quiz answers
+
+Predictions for the test set is as follows
+```{r echo=FALSE}
+predTest
+```
+
+
